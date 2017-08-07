@@ -1,5 +1,8 @@
 #pragma once
 
+#include <time.h>
+#include "asm.h"
+
 namespace ImageProg {
 
 	using namespace System;
@@ -8,6 +11,8 @@ namespace ImageProg {
 	using namespace System::Windows::Forms;
 	using namespace System::Data;
 	using namespace System::Drawing;
+	using namespace System::Drawing::Imaging;
+	using namespace System::Data;
 
 	/// <summary>
 	/// Summary for MyForm
@@ -16,6 +21,58 @@ namespace ImageProg {
 	{
 	public:
 		Bitmap^ bmpFront;
+		unsigned char* bmpOriginal;
+		static int imageSizeInBytes = -1;
+		static Rectangle imageRectangle;
+		BitmapData ^bmpData;
+		static double cppCount = 0.0;
+		static double cppTotal = 0.0;
+		static double asmCount = 0.0;
+		static double asmTotal = 0.0;
+
+		void ClearOriginalImage()
+		{
+			if (bmpOriginal != nullptr)
+			{
+				delete[] bmpOriginal;
+			}
+		}
+
+		/*
+		 * Make a copy of the original image
+		 */
+		void SaveOriginalImage(Bitmap ^bmp)
+		{
+			ClearOriginalImage();
+
+			imageSizeInBytes = bmp->Width * bmp->Height * 3;
+
+			bmpOriginal = new unsigned char[imageSizeInBytes];
+
+			imageRectangle.Width = bmp->Width;
+			imageRectangle.Height = bmp->Height;
+
+			bmpData = bmp->LockBits(imageRectangle, ImageLockMode::ReadOnly, PixelFormat::Format24bppRgb);
+
+			unsigned char* p = (unsigned char*)bmpData->Scan0.ToPointer();
+
+			for (int i = 0; i < imageSizeInBytes; i++)
+			{
+				bmpOriginal[i] = *p++;
+			}
+
+			bmp->UnlockBits(bmpData);
+		}
+
+		void AdjustBrightness(unsigned char* bmp, short amount)
+		{
+			for (int i = 0; i < imageSizeInBytes; i++)
+			{
+				if ((short)bmpOriginal[i] + amount < 0) bmp[i] = 0;
+				else if ((short)bmpOriginal[i] + amount > 255) bmp[i] = 255;
+				else bmp[i] = bmpOriginal[i] + amount;
+			}
+		}
 
 		MyForm(void)
 		{
@@ -44,6 +101,8 @@ namespace ImageProg {
 	private: System::Windows::Forms::TrackBar^  trkBrightness;
 	private: System::Windows::Forms::Label^  lblCPPAverage;
 	private: System::Windows::Forms::OpenFileDialog^  dlgOpen;
+	private: System::Windows::Forms::Label^  lblASMAverage;
+	private: System::Windows::Forms::TrackBar^  trkASMAdjustBrightness;
 	protected:
 
 
@@ -69,9 +128,12 @@ namespace ImageProg {
 			this->trkBrightness = (gcnew System::Windows::Forms::TrackBar());
 			this->lblCPPAverage = (gcnew System::Windows::Forms::Label());
 			this->dlgOpen = (gcnew System::Windows::Forms::OpenFileDialog());
+			this->lblASMAverage = (gcnew System::Windows::Forms::Label());
+			this->trkASMAdjustBrightness = (gcnew System::Windows::Forms::TrackBar());
 			this->menuStrip1->SuspendLayout();
 			(cli::safe_cast<System::ComponentModel::ISupportInitialize^>(this->picImage))->BeginInit();
 			(cli::safe_cast<System::ComponentModel::ISupportInitialize^>(this->trkBrightness))->BeginInit();
+			(cli::safe_cast<System::ComponentModel::ISupportInitialize^>(this->trkASMAdjustBrightness))->BeginInit();
 			this->SuspendLayout();
 			// 
 			// menuStrip1
@@ -98,14 +160,14 @@ namespace ImageProg {
 			// openToolStripMenuItem
 			// 
 			this->openToolStripMenuItem->Name = L"openToolStripMenuItem";
-			this->openToolStripMenuItem->Size = System::Drawing::Size(152, 26);
+			this->openToolStripMenuItem->Size = System::Drawing::Size(118, 26);
 			this->openToolStripMenuItem->Text = L"&Open";
 			this->openToolStripMenuItem->Click += gcnew System::EventHandler(this, &MyForm::openToolStripMenuItem_Click);
 			// 
 			// exitToolStripMenuItem
 			// 
 			this->exitToolStripMenuItem->Name = L"exitToolStripMenuItem";
-			this->exitToolStripMenuItem->Size = System::Drawing::Size(152, 26);
+			this->exitToolStripMenuItem->Size = System::Drawing::Size(118, 26);
 			this->exitToolStripMenuItem->Text = L"E&xit";
 			this->exitToolStripMenuItem->Click += gcnew System::EventHandler(this, &MyForm::exitToolStripMenuItem_Click);
 			// 
@@ -133,6 +195,7 @@ namespace ImageProg {
 			this->trkBrightness->Size = System::Drawing::Size(247, 45);
 			this->trkBrightness->TabIndex = 2;
 			this->trkBrightness->TickFrequency = 16;
+			this->trkBrightness->Scroll += gcnew System::EventHandler(this, &MyForm::trkBrightness_Scroll);
 			// 
 			// lblCPPAverage
 			// 
@@ -149,11 +212,38 @@ namespace ImageProg {
 			this->dlgOpen->FileName = L"openFileDialog1";
 			this->dlgOpen->Filter = L"Jpeg|*.jpg|PNG|*.png|Bitmap|*.bmp|All Files|*.*";
 			// 
+			// lblASMAverage
+			// 
+			this->lblASMAverage->Anchor = static_cast<System::Windows::Forms::AnchorStyles>((System::Windows::Forms::AnchorStyles::Bottom | System::Windows::Forms::AnchorStyles::Right));
+			this->lblASMAverage->AutoSize = true;
+			this->lblASMAverage->Location = System::Drawing::Point(266, 318);
+			this->lblASMAverage->Name = L"lblASMAverage";
+			this->lblASMAverage->Size = System::Drawing::Size(111, 20);
+			this->lblASMAverage->TabIndex = 5;
+			this->lblASMAverage->Text = L"ASM Average:";
+			this->lblASMAverage->Click += gcnew System::EventHandler(this, &MyForm::lblAsmAverage_Click);
+			// 
+			// trkASMAdjustBrightness
+			// 
+			this->trkASMAdjustBrightness->Anchor = static_cast<System::Windows::Forms::AnchorStyles>(((System::Windows::Forms::AnchorStyles::Bottom | System::Windows::Forms::AnchorStyles::Left)
+				| System::Windows::Forms::AnchorStyles::Right));
+			this->trkASMAdjustBrightness->Enabled = false;
+			this->trkASMAdjustBrightness->Location = System::Drawing::Point(13, 318);
+			this->trkASMAdjustBrightness->Maximum = 255;
+			this->trkASMAdjustBrightness->Minimum = -255;
+			this->trkASMAdjustBrightness->Name = L"trkASMAdjustBrightness";
+			this->trkASMAdjustBrightness->Size = System::Drawing::Size(247, 45);
+			this->trkASMAdjustBrightness->TabIndex = 4;
+			this->trkASMAdjustBrightness->TickFrequency = 16;
+			this->trkASMAdjustBrightness->Scroll += gcnew System::EventHandler(this, &MyForm::trkASMAdjustBrightness_Scroll);
+			// 
 			// MyForm
 			// 
 			this->AutoScaleDimensions = System::Drawing::SizeF(9, 20);
 			this->AutoScaleMode = System::Windows::Forms::AutoScaleMode::Font;
 			this->ClientSize = System::Drawing::Size(426, 402);
+			this->Controls->Add(this->lblASMAverage);
+			this->Controls->Add(this->trkASMAdjustBrightness);
 			this->Controls->Add(this->lblCPPAverage);
 			this->Controls->Add(this->trkBrightness);
 			this->Controls->Add(this->picImage);
@@ -165,10 +255,12 @@ namespace ImageProg {
 			this->Name = L"MyForm";
 			this->RightToLeftLayout = true;
 			this->Text = L"Image Proc";
+			this->FormClosing += gcnew System::Windows::Forms::FormClosingEventHandler(this, &MyForm::MyForm_FormClosing);
 			this->menuStrip1->ResumeLayout(false);
 			this->menuStrip1->PerformLayout();
 			(cli::safe_cast<System::ComponentModel::ISupportInitialize^>(this->picImage))->EndInit();
 			(cli::safe_cast<System::ComponentModel::ISupportInitialize^>(this->trkBrightness))->EndInit();
+			(cli::safe_cast<System::ComponentModel::ISupportInitialize^>(this->trkASMAdjustBrightness))->EndInit();
 			this->ResumeLayout(false);
 			this->PerformLayout();
 
@@ -186,15 +278,72 @@ namespace ImageProg {
 			{
 				bmpFront = (Bitmap^)Image::FromFile(dlgOpen->FileName);
 
+				SaveOriginalImage(bmpFront);
+
 				picImage->Image = bmpFront;
 
 				trkBrightness->Enabled = true;
+				trkASMAdjustBrightness->Enabled = true;
+
+				cppCount = 0.0;
+				cppTotal = 0.0;
+				asmTotal = 0.0;
+				asmCount = 0.0;
 			}
 			catch (...)
 			{
 				MessageBox::Show("This file could not be opened");
 			}
 		}
+	}
+	private: System::Void trkBrightness_Scroll(System::Object^  sender, System::EventArgs^  e)
+	{
+		bmpData = bmpFront->LockBits(imageRectangle, ImageLockMode::WriteOnly, PixelFormat::Format24bppRgb);
+
+		long startTime = clock();
+
+		AdjustBrightness((unsigned char*)bmpData->Scan0.ToPointer(), trkBrightness->Value);
+
+		long finishTime = clock();
+
+		bmpFront->UnlockBits(bmpData);
+
+		picImage->Refresh();
+
+		cppTotal += finishTime - startTime;
+		cppCount++;
+
+		lblCPPAverage->Text = "C++ Average: " + Math::Round(cppTotal / cppCount, 2);
+	}
+	private: System::Void MyForm_FormClosing(System::Object^  sender, System::Windows::Forms::FormClosingEventArgs^  e)
+	{
+		ClearOriginalImage();
+	}
+	private: System::Void lblAsmAverage_Click(System::Object^  sender, System::EventArgs^  e) {
+	}
+	private: System::Void trkASMAdjustBrightness_Scroll(System::Object^  sender, System::EventArgs^  e)
+	{
+		bmpData = bmpFront->LockBits(imageRectangle, ImageLockMode::WriteOnly, PixelFormat::Format24bppRgb);
+
+		long startTime = clock();
+
+		ASMAdjustBrightness(
+			(unsigned char*)bmpData->Scan0.ToPointer(),
+			bmpOriginal,
+			trkASMAdjustBrightness->Value,
+			imageSizeInBytes
+		);
+
+		long finishTime = clock();
+
+		bmpFront->UnlockBits(bmpData);
+
+		picImage->Refresh();
+
+		asmTotal += finishTime - startTime;
+		asmCount++;
+
+		lblASMAverage->Text = "ASM Average: " + Math::Round(asmTotal / asmCount, 2);
 	}
 	};
 }
