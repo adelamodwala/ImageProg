@@ -39,7 +39,5 @@ MainLoopSubtract:
   jnz MainLoopSubtract          ; Jump if there's more
   ret                           ; Return to silly C++
 
-
-  ret
 ASMAdjustBrightness endp
 end
